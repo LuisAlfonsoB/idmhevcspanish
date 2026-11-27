@@ -1,0 +1,68 @@
+name: Build Windows portable EXE
+
+on:
+  workflow_dispatch:   # manual only: run it from the Actions tab
+
+permissions:
+  contents: write   # needed to attach the exe to a GitHub Release on tag pushes
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Download aria2c (torrent engine)
+        shell: bash
+        run: node scripts/get-aria2.js
+
+      - name: Download yt-dlp (YouTube downloads)
+        shell: bash
+        run: node scripts/get-ytdlp.js
+
+      - name: Syntax check
+        shell: bash
+        run: |
+          for f in src/*.js ui/*.js pages/shared/*.js test/*.js; do node --check "$f"; done
+
+      - name: Tests (aria2 wrapper, torrent manager, restream through ffmpeg)
+        run: npm test
+
+      - name: Build portable exe
+        id: build
+        run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Diagnose a failed build
+        if: failure() && steps.build.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "---- dist/win-unpacked contents (if any) ----"
+          ls -la dist/win-unpacked 2>/dev/null || echo "dist/win-unpacked was never created"
+          echo "---- effective electron-builder config ----"
+          cat dist/builder-effective-config.yaml 2>/dev/null || echo "no effective config written"
+
+      - name: List output
+        shell: bash
+        run: ls -lh dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 1DM-Browser-portable
+          path: dist/*-portable.exe
+          if-no-files-found: error
+
+      - name: Publish release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*-portable.exe

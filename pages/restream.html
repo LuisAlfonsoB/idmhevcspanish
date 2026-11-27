@@ -1,0 +1,140 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Live restream</title>
+<link rel="stylesheet" href="onedm://shared/shared.css">
+<style>
+.modes{display:flex;gap:6px;padding:12px 16px 0;flex-wrap:wrap}
+.modes button{padding:5px 14px}.modes button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.pad{padding:12px 16px}.pad label{display:block;margin:10px 0 4px;font-size:12px;color:var(--muted)}.pad label:first-child{margin-top:0}
+.line{display:flex;gap:8px}.chk{display:flex;gap:8px;align-items:center;margin:10px 0 0;font-size:13px;color:var(--fg)!important}
+.files{margin-top:10px;border:1px solid var(--border);border-radius:8px;max-height:260px;overflow:auto}
+.f{display:flex;gap:8px;align-items:center;padding:6px 10px;font-size:12px;border-bottom:1px solid var(--border);cursor:pointer}.f:last-child{border-bottom:0}.f:hover{background:var(--hover)}
+.f .n{flex:1;word-break:break-all}.f .n.dim{color:var(--muted)}.f .p{color:var(--muted);white-space:nowrap}
+.msg{margin:0 0 14px;padding:9px 12px;border-radius:8px;font-size:13px;word-break:break-word}.msg.ok{background:rgba(22,163,74,.14);color:#16a34a}.msg.bad{background:rgba(220,38,38,.12);color:var(--danger)}
+.live{padding:11px 16px;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:center}.live:last-child{border-bottom:0}.live .t{flex:1;min-width:0}
+.live b{display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.live small{display:block;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:0 0 9px}.dot.live{background:#ef4444;animation:p 1.2s infinite}.dot.starting{background:#f59e0b}.dot.failed{background:var(--danger)}.dot.ended{background:#16a34a}
+@keyframes p{50%{opacity:.35}}
+.hint{color:var(--muted);font-size:12px;margin:10px 0 0}
+</style></head><body>
+<header class="top"><h1>Live restream</h1><span class="sp"></span><button id="clr">Clear finished</button></header>
+<main>
+  <p class="hint" style="margin:0 0 14px">Play a video live into an RTMP server (YouTube, Twitch, OK.ru…) with ffmpeg, in real time. The video is passed through untouched; closing the browser stops every stream.</p>
+  <div id="msg" class="msg" hidden></div>
+  <div class="card" id="livecard" hidden><h2>Streams</h2><div id="jobs"></div></div>
+
+  <div class="card"><h2>1. Video</h2>
+    <div class="modes"><button data-m="url" class="on">Link</button><button data-m="file">File on this PC</button><button data-m="torrent">Torrent / magnet</button></div>
+    <div class="pad" id="p-url">
+      <label>Video link (http or https: a direct file or an HLS .m3u8)</label>
+      <input type="text" id="url" placeholder="https://…/video.mp4">
+    </div>
+    <div class="pad" id="p-file" hidden>
+      <label>Video file</label>
+      <div class="line"><input type="text" id="path" placeholder="C:\Videos\film.mkv"><button id="pick">Browse…</button></div>
+    </div>
+    <div class="pad" id="p-torrent" hidden>
+      <label>Magnet link, info-hash or a link to a .torrent</label>
+      <div class="line"><input type="text" id="mag" placeholder="magnet:?xt=…"><button id="load">Load</button><button id="loadf">Open .torrent…</button></div>
+      <p class="hint" id="tstat"></p>
+      <div id="tinfo" hidden>
+        <div style="font-weight:600;margin-top:6px;word-break:break-all" id="tname"></div>
+        <div class="files" id="tfiles"></div>
+        <label class="chk"><input type="checkbox" id="keep"> Keep the file in my download folder (otherwise it is deleted when the stream ends)</label>
+        <p class="hint">The chosen file is downloaded first (progress is shown in the stream's status), then streamed from disk.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card"><h2>2. Stream to</h2>
+    <div class="pad">
+      <label>RTMP address (put the key here too if it is part of the address)</label>
+      <input type="text" id="rtmp" placeholder="rtmp://a.rtmp.youtube.com/live2" autocomplete="off" spellcheck="false">
+      <label>Stream key (optional)</label>
+      <div class="line"><input type="password" id="key" autocomplete="off" spellcheck="false"><button id="showkey" type="button">Show</button></div>
+      <label>Audio</label>
+      <select id="audio"><option value="copy">Keep the original audio (default)</option><option value="auto">Auto: keep AAC, convert anything else to AAC</option><option value="aac">Always convert to AAC 128k stereo</option></select>
+      <label class="chk"><input type="checkbox" id="loop"> Repeat the video until I stop it</label>
+      <label class="chk"><input type="checkbox" id="remember" checked> Remember the address and key</label>
+      <p class="hint">If the server rejects the stream because of the audio codec, choose Auto or Always convert. Up to 2 streams at once. Needs enough upload bandwidth for the video's bitrate.</p>
+      <div style="margin-top:14px"><button class="primary" id="go" style="width:100%;padding:10px">Start live stream</button></div>
+    </div>
+  </div>
+</main>
+<script src="onedm://shared/shared.js"></script>
+<script>
+let mode = 'url', meta = null, chosen = null, jobs = [];
+const q = new URLSearchParams(location.search);
+const clock = s => { s = Math.max(0, Math.floor(s || 0)); return Math.floor(s / 3600) + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
+const say = (t, ok) => { const m = $('#msg'); m.hidden = !t; m.textContent = t || ''; m.className = 'msg ' + (ok ? 'ok' : 'bad'); };
+const STATUS = { starting: 'Starting', live: 'Live', ended: 'Finished', stopped: 'Stopped', failed: 'Failed' };
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  for (const x of ['url', 'file', 'torrent']) $('#p-' + x).hidden = x !== m;
+}
+document.querySelector('.modes').onclick = e => { const b = e.target.closest('[data-m]'); if (b) setMode(b.dataset.m); };
+
+function renderJobs() {
+  $('#livecard').hidden = !jobs.length;
+  $('#jobs').innerHTML = jobs.map(j => {
+    const active = j.status === 'live' || j.status === 'starting';
+    const torrentInfo = j.kind === 'torrent' && active ? ` · ${j.peers || 0} peers · ↓ ${fmtBytes(j.down)}/s` : '';
+    const detail = j.status === 'failed' && j.error ? j.error : j.stage;
+    return `<div class="live" data-id="${j.id}"><span class="dot ${j.status}"></span><div class="t"><b>${esc(j.name)}</b><small>${esc(STATUS[j.status] || j.status)} · ${clock(j.elapsed)}${esc(torrentInfo)}${j.loop ? ' · repeat' : ''}${j.target ? ' · ' + esc(j.target) : ''}</small><small>${esc(detail)}</small></div>
+      ${active ? '<button class="danger" data-a="stop">Stop</button>' : '<button data-a="remove">Remove</button>'}</div>`;
+  }).join('');
+}
+$('#jobs').onclick = e => { const b = e.target.closest('[data-a]'); if (!b) return; onedm.invoke('restream:' + b.dataset.a, +b.closest('[data-id]').dataset.id); };
+$('#clr').onclick = () => onedm.invoke('restream:clear');
+onedm.on('restream-update', l => { jobs = l; renderJobs(); });
+
+function renderTorrent() {
+  $('#tinfo').hidden = !meta;
+  if (!meta) return;
+  $('#tname').textContent = meta.name + ' · ' + fmtBytes(meta.length);
+  const files = meta.files.slice().sort((a, b) => (b.video - a.video) || (b.length - a.length));
+  $('#tfiles').innerHTML = files.map(f => `<label class="f"><input type="radio" name="tf" value="${f.index}" ${chosen === f.index ? 'checked' : ''}><span class="n ${f.video ? '' : 'dim'}">${esc(f.path)}</span><span class="p">${fmtBytes(f.length)}</span></label>`).join('');
+}
+$('#tfiles').onchange = e => { chosen = +e.target.value; };
+function gotMeta(r) {
+  $('#load').disabled = false; $('#tstat').textContent = '';
+  if (!r || !r.ok) { if (r && r.error) say(r.error); return; }
+  say(''); meta = r.meta;
+  const vids = meta.files.filter(f => f.video), pool = vids.length ? vids : meta.files;
+  chosen = pool.reduce((a, f) => (a && a.length >= f.length ? a : f), null).index;
+  renderTorrent();
+}
+async function load(preIndex) {
+  const v = $('#mag').value.trim(); if (!v) return;
+  $('#load').disabled = true; $('#tstat').textContent = 'Fetching the file list from peers (a magnet can take up to 2 minutes)…';
+  gotMeta(await onedm.invoke('torrents:peek', v));
+  if (preIndex != null && meta && meta.files.some(f => f.index === preIndex)) { chosen = preIndex; renderTorrent(); }
+}
+$('#load').onclick = () => load(); $('#mag').onkeydown = e => { if (e.key === 'Enter') load(); };
+$('#loadf').onclick = async () => { $('#tstat').textContent = ''; gotMeta(await onedm.invoke('torrents:peek-file')); };
+$('#pick').onclick = async () => { const p = await onedm.invoke('restream:pick-file'); if (p) $('#path').value = p; };
+$('#showkey').onclick = () => { const k = $('#key'); k.type = k.type === 'password' ? 'text' : 'password'; $('#showkey').textContent = k.type === 'password' ? 'Show' : 'Hide'; };
+
+$('#go').onclick = async () => {
+  const o = { rtmpUrl: $('#rtmp').value.trim(), streamKey: $('#key').value.trim(), loop: $('#loop').checked, audio: $('#audio').value, remember: $('#remember').checked, kind: mode };
+  if (!o.rtmpUrl) return say('Enter the stream address (rtmp://…).');
+  if (mode === 'url') { o.url = $('#url').value.trim(); o.referrer = q.get('ref') || ''; if (!o.url) return say('Paste the video link first.'); }
+  else if (mode === 'file') { o.path = $('#path').value.trim().replace(/^"|"$/g, ''); if (!o.path) return say('Choose a video file first.'); }
+  else { if (!meta || chosen == null) return say('Load a torrent and choose the video first.'); o.key = meta.key; o.index = chosen; o.keep = $('#keep').checked; }
+  $('#go').disabled = true;
+  const r = await onedm.invoke('restream:start', o);
+  $('#go').disabled = false;
+  if (r && r.ok) say('Started. Progress is shown above.', true); else say((r && r.error) || 'Could not start.');
+};
+
+(async () => {
+  const d = await onedm.invoke('restream:get');
+  jobs = d.jobs; renderJobs();
+  $('#rtmp').value = d.settings.restreamUrl; $('#key').value = d.settings.restreamKey; $('#audio').value = d.settings.restreamAudio;
+  if (!d.ffmpeg) say('ffmpeg is not available in this build, so live streaming cannot run.');
+  // arrive from the media popup, the Downloads page or the Torrents page
+  if (q.get('url')) { setMode('url'); $('#url').value = q.get('url'); }
+  else if (q.get('file')) { setMode('file'); $('#path').value = q.get('file'); }
+  else if (q.get('th')) { setMode('torrent'); $('#mag').value = q.get('th'); load(q.get('i') != null ? +q.get('i') : null); }
+})();
+</script></body></html>

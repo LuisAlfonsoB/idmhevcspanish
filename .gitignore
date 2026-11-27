@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.log
+
+# aria2c binary (downloaded by scripts/get-aria2.js / CI)
+bin/

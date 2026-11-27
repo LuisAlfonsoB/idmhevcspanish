@@ -1,0 +1,23 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>History</title>
+<link rel="stylesheet" href="onedm://shared/shared.css"></head><body>
+<header class="top"><h1>History</h1><input id="q" type="search" placeholder="Search history" style="max-width:340px" autofocus><span class="sp"></span><button class="danger" id="clear">Clear all</button></header>
+<main id="m"></main>
+<script src="onedm://shared/shared.js"></script>
+<script>
+const invoke = (c, ...a) => onedm.invoke('history:' + c, ...a);
+let t = null;
+async function load() {
+  const list = await invoke('get', $('#q').value, 1000); let day = '', html = '';
+  for (const h of list) {
+    const d = new Date(h.time), label = d.toDateString() === new Date().toDateString() ? 'Today' : d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    if (label !== day) { if (day) html += '</div>'; html += `<div class="card"><h2>${esc(label)}</h2>`; day = label; }
+    html += `<div class="item" data-id="${esc(h.id)}"><small style="width:62px;color:var(--muted)">${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small><div class="t"><b><a href="${esc(h.url)}">${esc(h.title || h.url)}</a></b><small>${esc(h.url)}</small></div><div class="acts"><button class="danger" data-d>Remove</button></div></div>`;
+  }
+  if (day) html += '</div>';
+  $('#m').innerHTML = html || '<div class="empty">No history.</div>';
+}
+$('#q').oninput = () => { clearTimeout(t); t = setTimeout(load, 150); };
+$('#m').onclick = async e => { const b = e.target.closest('[data-d]'); if (b) { await invoke('delete', b.closest('[data-id]').dataset.id); load(); } };
+$('#clear').onclick = async () => { if (await confirmModal('Clear all browsing history?', 'Clear')) { await invoke('clear'); load(); } };
+load();
+</script></body></html>

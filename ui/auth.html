@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<style>
+:root{color-scheme:light dark;font-family:Segoe UI,system-ui,sans-serif}
+body{margin:0;padding:18px 22px;background:Canvas;color:CanvasText}
+h3{margin:0 0 4px;font-size:16px}.s{opacity:.7;font-size:12px;margin-bottom:14px;word-break:break-all}
+input{width:100%;box-sizing:border-box;padding:8px 10px;margin:4px 0 10px;border:1px solid #8886;border-radius:6px;background:Field;color:FieldText;font-size:14px}
+.row{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+button{padding:7px 18px;border-radius:6px;border:1px solid #8886;background:ButtonFace;color:ButtonText;font-size:13px;cursor:pointer}
+button.p{background:#2563eb;border-color:#2563eb;color:#fff}
+</style><script src="i18n-dom.js"></script></head><body>
+<h3>Sign in</h3><div class="s" id="s"></div>
+<form id="f"><label>Username<input id="u" autofocus autocomplete="off"></label>
+<label>Password<input id="p" type="password" autocomplete="off"></label>
+<div class="row"><button type="button" id="c">Cancel</button><button class="p" type="submit">Sign in</button></div></form>
+<script>
+const q=new URLSearchParams(location.search);
+document.getElementById('s').textContent=(q.get('proxy')?'Proxy ':'')+q.get('host')+(q.get('realm')?' — '+q.get('realm'):'');
+document.getElementById('f').onsubmit=e=>{e.preventDefault();authApi.submit(u.value,p.value)};
+document.getElementById('c').onclick=()=>authApi.cancel();
+</script></body></html>

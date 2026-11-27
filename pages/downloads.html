@@ -1,0 +1,32 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Downloads</title>
+<link rel="stylesheet" href="onedm://shared/shared.css">
+<style>.ic{width:34px;height:34px;border-radius:8px;background:var(--hover);display:grid;place-items:center;font-size:18px;flex:0 0 34px}.item .acts{opacity:1}</style></head><body>
+<header class="top"><h1>Downloads</h1><input id="q" type="search" placeholder="Search downloads" style="max-width:340px"><span class="sp"></span><button id="clear">Clear finished</button></header>
+<main><div style="display:flex;gap:8px;margin-bottom:14px"><input id="u" type="text" placeholder="Paste a link to download — http(s), .m3u8 stream, magnet or .torrent"><button class="primary" id="addu">Download</button></div><div id="err" style="color:var(--danger);margin:-6px 0 10px"></div><div id="m"></div></main>
+<script src="onedm://shared/shared.js"></script>
+<script>
+let list = [];
+const isVid = n => /\.(mp4|mkv|mov|avi|webm|ts|m4v|flv|wmv|mpg|mpeg|m2ts)$/i.test(n || '');
+const when = t => new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+function render() {
+  const q = $('#q').value.toLowerCase(), items = list.filter(d => !q || (d.filename + d.url).toLowerCase().includes(q));
+  $('#m').innerHTML = items.length ? `<div class="card">${items.map(d => {
+    const merging = d.state === 'progressing' && d.stage === 'merge', pct = merging ? (d.mergePct || 0) : (d.total > 0 ? Math.min(100, Math.round(100 * d.received / d.total)) : 0), live = d.state === 'progressing' || d.state === 'paused';
+    const conn = d.kind === 'accel' && d.connections > 1 ? ` · ⚡ ${d.state === 'progressing' && d.active ? d.active + '/' : ''}${d.connections} connections` : (d.kind === 'hls' || d.kind === 'dash') ? ` · ${d.live ? '🔴 Recording live' : d.kind.toUpperCase()}${d.segments ? ' · ' + d.segments : ''}` : '';
+    const info = merging ? `${d.kind === 'dash' ? 'Merging video and audio' : 'Converting to MP4'}… ${pct}%` : live ? `${fmtBytes(d.received)}${d.total > 0 ? ' of ' + fmtBytes(d.total) + ' (' + pct + '%)' : ''}${d.state === 'paused' ? ' · Paused' : ' · ' + fmtBytes(d.speed || 0) + '/s'}${conn}` : d.state === 'completed' ? fmtBytes(d.received) + ' · ' + when(d.startTime) + (d.note ? ' · ' + d.note : '') : d.state === 'cancelled' ? 'Cancelled' : 'Failed' + (d.error ? ': ' + d.error : '') + ' — can be resumed';
+    const acts = d.state === 'progressing' ? `${d.live ? '<button data-a="stop">Stop &amp; save</button>' : '<button data-a="pause">Pause</button>'}<button data-a="cancel">Cancel</button>` : (d.state === 'paused' || d.state === 'interrupted') ? `<button data-a="resume">Resume</button><button data-a="cancel">Cancel</button><button data-a="remove">Remove</button>` : d.state === 'completed' ? `<button data-a="open">Open</button><button data-a="show">Show in folder</button>${isVid(d.filename) && d.path ? '<button data-a="restream">Restream</button>' : ''}<button data-a="remove">Remove</button><button class="danger" data-a="delete-file">Delete file</button>` : `<button data-a="remove">Remove</button>`;
+    return `<div class="item" data-id="${esc(d.id)}"><div class="ic">${d.state === 'completed' ? '📄' : '⬇'}</div><div class="t"><b>${esc(d.filename)}</b><small>${esc(info)}</small>${live ? `<div class="bar"><div style="width:${pct}%"></div></div>` : ''}<small>${esc(d.url)}</small></div><div class="acts">${acts}</div></div>`;
+  }).join('')}</div>` : '<div class="empty">No downloads.</div>';
+}
+$('#q').oninput = render;
+$('#m').onclick = e => {
+  const b = e.target.closest('[data-a]'); if (!b) return; const id = b.closest('[data-id]').dataset.id;
+  if (b.dataset.a === 'restream') { const d = list.find(x => String(x.id) === id); if (d && d.path) onedm.invoke('open', 'onedm://restream?file=' + encodeURIComponent(d.path), true); return; }
+  onedm.invoke('downloads:action', id, b.dataset.a);
+};
+async function addUrl() { const v = $('#u').value.trim(); if (!v) return; const r = await onedm.invoke('downloads:add-url', v); $('#err').textContent = r && r.ok === false ? r.error : ''; if (!r || r.ok !== false) $('#u').value = ''; }
+$('#addu').onclick = addUrl; $('#u').onkeydown = e => { if (e.key === 'Enter') addUrl(); };
+$('#clear').onclick = () => onedm.invoke('downloads:action', '', 'clear');
+onedm.on('downloads-update', l => { list = l; render(); });
+onedm.invoke('downloads:get').then(l => { list = l; render(); });
+</script></body></html>

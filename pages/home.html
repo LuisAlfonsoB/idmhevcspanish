@@ -1,0 +1,32 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Home</title>
+<link rel="stylesheet" href="onedm://shared/shared.css">
+<style>
+body { display: grid; place-items: center; min-height: 100vh; background: radial-gradient(1200px 600px at 50% -10%, color-mix(in srgb, var(--accent) 14%, var(--bg)), var(--bg)); }
+.wrap { width: min(760px, 92vw); text-align: center; margin-top: -6vh; }
+.logo { width: min(300px, 60vw); margin-bottom: 26px; }
+form { display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 8px 0 20px; background: var(--card); border: 1px solid var(--border); border-radius: 25px; box-shadow: 0 4px 18px rgba(0,0,0,.12); }
+form:focus-within { border-color: var(--accent); }
+form img { height: 20px; max-width: 60px; object-fit: contain; }
+form input { flex: 1; border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 16px; outline: 0; }
+form button { border: 0; background: var(--accent); color: #fff; border-radius: 20px; padding: 9px 20px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 14px; margin-top: 34px; }
+.tile { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px; border-radius: 14px; color: var(--fg); } .tile:hover { background: var(--hover); text-decoration: none; }
+.tile .ic { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--card); border: 1px solid var(--border); font: 600 18px sans-serif; color: var(--accent); text-transform: uppercase; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+.tile span.n { max-width: 100%; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style></head><body>
+<div class="wrap">
+  <img class="logo" src="onedm://assets/logo.png" alt="1DM">
+  <form id="f" autocomplete="off"><img id="eng" alt=""><input id="q" type="text" placeholder="Search or enter address" autofocus><button type="submit">Go</button></form>
+  <div class="grid" id="grid"></div>
+</div>
+<script src="onedm://shared/shared.js"></script>
+<script>
+(async () => {
+  const d = await onedm.invoke('home-data');
+  $('#eng').src = 'onedm://assets/engines/' + d.engine + '.png'; $('#eng').onerror = e => e.target.remove();
+  $('#f').onsubmit = async e => { e.preventDefault(); const v = $('#q').value.trim(); if (v) location.href = await onedm.invoke('resolve', v); };
+  const seen = new Set(), tiles = [];
+  for (const s of [...d.bookmarks, ...d.top]) { if (!seen.has(s.url) && tiles.length < 12) { seen.add(s.url); tiles.push(s); } }
+  $('#grid').innerHTML = tiles.map(s => { let h = s.url; try { h = new URL(s.url).hostname.replace(/^www\./, ''); } catch (_) {} return `<a class="tile" href="${esc(s.url)}"><div class="ic">${letter(h)}</div><span class="n">${esc(s.title && s.title !== s.url ? s.title : h)}</span></a>`; }).join('');
+})();
+</script></body></html>

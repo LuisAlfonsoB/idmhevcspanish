@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: http: https: onedm:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>1DM Browser UI</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<div id="scrim" hidden></div>
+<div id="chrome">
+  <div id="tabstrip">
+    <div id="tabs"></div>
+    <button id="newtab" class="ibtn" title="New tab (Ctrl+T)"></button>
+  </div>
+  <div id="toolbar">
+    <button id="back" class="ibtn" title="Back (Alt+Left)"></button>
+    <button id="fwd" class="ibtn" title="Forward (Alt+Right)"></button>
+    <button id="reload" class="ibtn" title="Reload (Ctrl+R)"></button>
+    <button id="home" class="ibtn" title="Home (Alt+Home)"></button>
+    <div id="omni">
+      <span id="secure" class="sicon"></span>
+      <input id="url" type="text" spellcheck="false" autocomplete="off" placeholder="Search or enter address">
+      <button id="zoomind" hidden></button>
+      <button id="star" class="ibtn small" title="Bookmark this page (Ctrl+D)"></button>
+    </div>
+    <button id="media" class="ibtn" title="Media detected on this page" hidden><span class="badge" id="medn"></span></button>
+    <button id="shield" class="ibtn" title="Ad blocker"><span class="badge" id="shieldn" hidden></span></button>
+    <button id="dl" class="ibtn" title="Downloads (Ctrl+J)"><span class="badge" id="dln" hidden></span></button>
+    <button id="menu" class="ibtn" title="Menu"></button>
+  </div>
+  <div id="bmbar"></div>
+  <div id="findbar" hidden>
+    <input id="findq" placeholder="Find in page" spellcheck="false">
+    <span id="findc"></span>
+    <label class="chk"><input type="checkbox" id="findcase"> Match case</label>
+    <button id="findprev" class="ibtn small" title="Previous (Shift+Enter)"></button>
+    <button id="findnext" class="ibtn small" title="Next (Enter)"></button>
+    <button id="findclose" class="ibtn small" title="Close (Esc)"></button>
+  </div>
+</div>
+<div id="dropdown" hidden></div>
+<script src="i18n-dom.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>

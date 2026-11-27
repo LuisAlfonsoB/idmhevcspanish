@@ -1,0 +1,124 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Settings</title>
+<link rel="stylesheet" href="onedm://shared/shared.css"></head><body>
+<header class="top"><h1>Settings</h1><span class="sp"></span><span id="saved" style="color:var(--muted);font-size:12px"></span></header>
+<main id="m"></main>
+<script src="onedm://shared/shared.js"></script>
+<script>
+let S = {}, info = {};
+const set = async patch => { Object.assign(S, patch); await onedm.invoke('settings:set', patch); const el = $('#saved'); el.textContent = 'Saved'; clearTimeout(el._t); el._t = setTimeout(() => el.textContent = '', 1200); };
+const sw = (id, on) => `<label class="sw"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span></span></label>`;
+const row = (title, sub, ctl) => `<div class="row"><div class="l">${title}${sub ? `<small>${sub}</small>` : ''}</div><div class="c">${ctl}</div></div>`;
+const sel = (id, opts, val) => `<select id="${id}">${opts.map(([v, l]) => `<option value="${esc(v)}"${v === val ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+function bindSwitch(id, key, sub) { const el = $('#' + id); if (el) el.onchange = () => set(sub ? { [key]: { ...S[key], [sub]: el.checked } } : { [key]: el.checked }); }
+function bindText(id, key, xf = v => v) { const el = $('#' + id); if (el) el.onchange = () => set({ [key]: xf(el.value) }); }
+const lines = v => v.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+
+async function render() {
+  const r = await onedm.invoke('settings:get'); S = r.settings; info = r;
+  const engines = Object.entries(r.engines).map(([k, v]) => [k, v.name]);
+  $('#m').innerHTML = `
+  <div class="card"><h2>General</h2>
+    ${row('Language', '', sel('language', [['auto', 'Automatic (system language)'], ...(info.languages || []).map(l => [l.code, l.name])], S.language || 'auto'))}
+    ${row('Search engine', 'Used for the address bar and the home page', sel('searchEngine', engines, S.searchEngine))}
+    ${row('Search suggestions', 'Send what you type to the search engine to get suggestions', sw('searchSuggestions', S.searchSuggestions))}
+    ${row('Home page', 'Opened by the Home button and new tabs', `<input type="text" id="homepage" value="${esc(S.homepage)}" style="width:300px">`)}
+    ${row('Restore tabs on startup', '', sw('restoreTabs', S.restoreTabs))}
+  </div>
+  <div class="card"><h2>Appearance</h2>
+    ${row('Theme', '', sel('theme', [['system', 'Use system setting'], ['light', 'Light'], ['dark', 'Dark']], S.theme))}
+    ${row('Show bookmarks bar', '', sw('showBookmarksBar', S.showBookmarksBar))}
+  </div>
+  <div class="card"><h2>Downloads with yt-dlp</h2>
+    ${row('YouTube download button', 'Adds a card with quality choices (up to 4K, MP3, M4A) to the media button on YouTube pages. Uses yt-dlp, which the app keeps up to date by itself.', sw('ytDownloader', S.ytDownloader))}
+    ${row('Scan pages automatically', 'When a page has a video player but nothing was detected (for example because autoplay is blocked), ask yt-dlp to look for the video. You can also scan by hand from the media button.', sw('ytAutoScan', S.ytAutoScan))}
+    ${row('Use my logins for downloads', 'Hands this browser\u2019s YouTube cookies (and, when scanning a page, that site\u2019s cookies) to yt-dlp, for age-restricted or members-only videos and \u201cconfirm you\u2019re not a bot\u201d checks. Off by default: yt-dlp\u2019s own advice is that heavy use with a logged-in account can get that account flagged.', sw('ytUseCookies', S.ytUseCookies))}
+  </div>
+  <div class="card"><h2>Autoplay</h2>
+    ${row('Block autoplay', 'Videos and audio will not start by themselves until you click or press a key on the page. Takes effect when a page loads.', sw('autoplayBlock', S.autoplayBlock))}
+    <div class="row"><div class="l">Allowed sites<small>Autoplay is not blocked on these hosts, one per line</small><textarea id="autoplayAllowed">${esc((S.autoplayAllowed || []).join('\n'))}</textarea></div></div>
+  </div>
+  <div class="card"><h2>Ad blocker</h2>
+    ${row('Block ads and trackers', `${info.rules.toLocaleString()} rules loaded · ${info.blocked.toLocaleString()} requests blocked this session`, sw('adblock', S.adblock))}
+    ${row('Block YouTube ads', 'Best-effort: strips ad data from YouTube\u2019s player, and skips past ads baked into the video itself. YouTube can change its site at any time, so this may occasionally need a fix.', sw('ytAdblock', S.ytAdblock))}
+    <div class="row"><div class="l">Filter lists<small>Adblock Plus format, one URL per line</small><textarea id="filterLists">${esc((S.filterLists || []).join('\n'))}</textarea></div></div>
+    <div class="row"><div class="l">Allowed sites<small>Ads are not blocked on these hosts, one per line</small><textarea id="adblockWhitelist">${esc((S.adblockWhitelist || []).join('\n'))}</textarea></div></div>
+    <div class="row"><div class="l"></div><div class="c"><button id="saveLists">Save &amp; update lists</button></div></div>
+  </div>
+  <div class="card"><h2>Privacy and security</h2>
+    ${row('Send “Do Not Track” and Global Privacy Control', '', sw('doNotTrack', S.doNotTrack))}
+    ${row('Block third-party cookies', 'May break some sign-in and embedded content', sw('blockThirdPartyCookies', S.blockThirdPartyCookies))}
+    ${row('HTTPS-only mode', 'Upgrade all http:// page loads to https:// (except local addresses)', sw('httpsOnly', S.httpsOnly))}
+    ${row('Clear history on exit', '', sw('coHistory', S.clearOnExit.history))}
+    ${row('Clear cookies and site data on exit', '', sw('coCookies', S.clearOnExit.cookies))}
+    ${row('Clear cache on exit', '', sw('coCache', S.clearOnExit.cache))}
+    <div class="row"><div class="l">Clear browsing data now
+      <small><label><input type="checkbox" id="cd_history" checked> History</label> &nbsp; <label><input type="checkbox" id="cd_cookies"> Cookies &amp; site data</label> &nbsp; <label><input type="checkbox" id="cd_cache" checked> Cache</label> &nbsp; <label><input type="checkbox" id="cd_downloads"> Download list</label> &nbsp; <label><input type="checkbox" id="cd_auth"> Saved logins (HTTP auth)</label></small></div>
+      <div class="c"><button class="danger" id="clearNow">Clear data</button></div></div>
+    <div class="row"><div class="l">Site permissions<small id="permInfo">…</small></div><div class="c"><button id="permReset">Reset all</button></div></div>
+  </div>
+  <div class="card"><h2>Downloads</h2>
+    ${row('Download folder', esc(S.downloadDir || info.defaultDownloadDir), '<button id="pickDir">Change…</button> <button id="defDir">Default</button>')}
+    ${row('Ask where to save each file', '', sw('askDownloadLocation', S.askDownloadLocation))}
+    ${row('Convert HLS videos to MP4', 'Uses the bundled ffmpeg; otherwise streams are saved as .ts', sw('hlsToMp4', S.hlsToMp4))}
+    ${row('Capture streaming (blob:) video', 'Lets you save videos that play through MediaSource (not DRM). Uses temporary disk space while a page is open.', sw('mseCapture', S.mseCapture))}
+    ${row('Max capture size per tab (MB)', '', `<input type="number" id="mseCapMB" min="256" max="102400" value="${esc(S.mseCapMB)}" style="width:100px">`)}
+    ${row('Accelerated downloads', 'Split large files into parallel connections (resumable). Falls back automatically if a server does not allow it.', sw('accelerated', S.accelerated))}
+    ${row('Connections per file', '1–16. More is not always faster; some servers limit it.', `<input type="number" id="connections" min="1" max="16" value="${esc(S.connections)}" style="width:80px">`)}
+    ${row('Accelerate files larger than (MB)', '', `<input type="number" id="accelMinMB" min="1" max="1024" value="${esc(S.accelMinMB)}" style="width:80px">`)}
+  </div>
+  <div class="card"><h2>Torrents</h2>
+    ${row('Keep seeding after download completes', 'Off: the torrent stops when finished', sw('torrentSeed', S.torrentSeed))}
+    ${row('Use DHT (trackerless peer discovery)', 'Applies after restart', sw('torrentDht', S.torrentDht))}
+    ${row('Max download speed (KB/s)', '0 = unlimited', `<input type="number" id="torrentDownKB" min="0" value="${esc(S.torrentDownKB)}" style="width:100px">`)}
+    ${row('Max upload speed (KB/s)', '0 = unlimited', `<input type="number" id="torrentUpKB" min="0" value="${esc(S.torrentUpKB)}" style="width:100px">`)}
+    ${row('Give up on a stalled torrent after (minutes)', 'No data received for this long (metadata of a magnet: at most 5 min). Use Retry to try again.', `<input type="number" id="torrentTimeoutMin" min="1" max="1440" value="${esc(Math.round((S.torrentTimeout || 600) / 60))}" style="width:100px">`)}
+    ${row('Stop seeding at upload ratio', '0 = no goal. Applies to torrents that keep seeding.', `<input type="number" id="torrentSeedRatio" min="0" step="0.1" value="${esc(S.torrentSeedRatio)}" style="width:100px">`)}
+    ${row('Stop seeding after (minutes)', '0 = no goal. With both goals at 0, a seeding torrent keeps going until you stop it.', `<input type="number" id="torrentSeedMinutes" min="0" value="${esc(S.torrentSeedMinutes)}" style="width:100px">`)}
+    ${row('Max connections per torrent', 'Applies after restart', `<input type="number" id="torrentMaxPeers" min="10" max="500" value="${esc(S.torrentMaxPeers)}" style="width:100px">`)}
+  </div>
+  <div class="card"><h2>Live restream</h2>
+    ${row('Default RTMP address', 'e.g. rtmp://a.rtmp.youtube.com/live2. Also editable on the Live restream page.', `<input type="text" id="restreamUrl" value="${esc(S.restreamUrl)}" style="width:320px" autocomplete="off" spellcheck="false">`)}
+    ${row('Default stream key', 'Stored in settings.json inside the data folder; never shown in error messages.', `<input type="password" id="restreamKey" value="${esc(S.restreamKey)}" style="width:320px" autocomplete="off" spellcheck="false">`)}
+    ${row('Audio', 'Default: original audio. If the server rejects the stream, switch to Auto or Always convert (RTMP servers like YouTube and Twitch only take AAC)', sel('restreamAudio', [['auto', 'Auto: keep AAC, convert the rest'], ['copy', 'Always keep the original audio'], ['aac', 'Always convert to AAC']], S.restreamAudio))}
+  </div>
+  <div class="card"><h2>Advanced</h2>
+    ${row('Custom user agent', 'Leave empty to use the default Chrome user agent', `<input type="text" id="userAgent" value="${esc(S.userAgent)}" style="width:320px" placeholder="Default">`)}
+    ${row('Proxy', '', sel('proxyMode', [['system', 'Use system proxy'], ['direct', 'No proxy'], ['custom', 'Manual']], S.proxyMode))}
+    ${row('Proxy rules', 'e.g. http://host:8080 or socks5://host:1080 or http=host:80;https=host:80', `<input type="text" id="proxyRules" value="${esc(S.proxyRules)}" style="width:320px">`)}
+  </div>
+  <div class="card"><h2>About</h2>
+    ${row('1DM Browser for Windows', `Port of the Android 1DM+ browser · Electron ${esc(info.electron)} · Chromium ${esc(info.chrome)}`, '')}
+    ${row('Data folder', esc(info.userData), '')}
+  </div>`;
+  $('#language').onchange = e => set({ language: e.target.value });
+  $('#searchEngine').onchange = e => set({ searchEngine: e.target.value });
+  $('#theme').onchange = e => set({ theme: e.target.value });
+  $('#proxyMode').onchange = e => set({ proxyMode: e.target.value });
+  ['searchSuggestions', 'restoreTabs', 'showBookmarksBar', 'adblock', 'autoplayBlock', 'ytDownloader', 'ytAutoScan', 'ytUseCookies', 'doNotTrack', 'blockThirdPartyCookies', 'httpsOnly', 'askDownloadLocation', 'accelerated', 'torrentSeed', 'torrentDht', 'hlsToMp4', 'mseCapture'].forEach(k => bindSwitch(k, k));
+  bindSwitch('coHistory', 'clearOnExit', 'history'); bindSwitch('coCookies', 'clearOnExit', 'cookies'); bindSwitch('coCache', 'clearOnExit', 'cache');
+  const num = (min, max) => v => Math.max(min, Math.min(max, parseInt(v, 10) || 0));
+  bindText('connections', 'connections', num(1, 16)); bindText('accelMinMB', 'accelMinMB', num(1, 1024)); bindText('torrentDownKB', 'torrentDownKB', num(0, 1e7)); bindText('torrentUpKB', 'torrentUpKB', num(0, 1e7)); bindText('torrentMaxPeers', 'torrentMaxPeers', num(10, 500)); bindText('mseCapMB', 'mseCapMB', num(256, 102400));
+  bindText('torrentTimeoutMin', 'torrentTimeout', v => num(1, 1440)(v) * 60); bindText('torrentSeedMinutes', 'torrentSeedMinutes', num(0, 1e6));
+  bindText('torrentSeedRatio', 'torrentSeedRatio', v => Math.max(0, parseFloat(v) || 0));
+  bindText('restreamUrl', 'restreamUrl', v => v.trim()); bindText('restreamKey', 'restreamKey', v => v.trim()); $('#restreamAudio').onchange = e => set({ restreamAudio: e.target.value });
+  bindText('homepage', 'homepage', v => v.trim() || 'onedm://home'); bindText('userAgent', 'userAgent', v => v.trim()); bindText('proxyRules', 'proxyRules', v => v.trim());
+  bindText('autoplayAllowed', 'autoplayAllowed', v => lines(v).map(s => s.toLowerCase()));
+  $('#saveLists').onclick = async () => {
+    const b = $('#saveLists'); b.disabled = true; b.textContent = 'Updating…';
+    await set({ filterLists: lines($('#filterLists').value), adblockWhitelist: lines($('#adblockWhitelist').value).map(s => s.toLowerCase()) });
+    const n = await onedm.invoke('settings:update-filters'); b.disabled = false; b.textContent = 'Save & update lists'; $('#saved').textContent = n + ' rules loaded';
+  };
+  $('#pickDir').onclick = async () => { const d = await onedm.invoke('settings:pick-dir'); if (d) { await set({ downloadDir: d }); render(); } };
+  $('#defDir').onclick = async () => { await set({ downloadDir: '' }); render(); };
+  $('#clearNow').onclick = async () => {
+    const w = { history: $('#cd_history').checked, cookies: $('#cd_cookies').checked, cache: $('#cd_cache').checked, downloads: $('#cd_downloads').checked, auth: $('#cd_auth').checked };
+    if (!Object.values(w).some(Boolean)) return;
+    if (await confirmModal('Clear the selected browsing data?', 'Clear')) { await onedm.invoke('settings:clear-data', w); $('#saved').textContent = 'Cleared'; }
+  };
+  const perms = await onedm.invoke('permissions:get'), n = Object.keys(perms).length;
+  $('#permInfo').textContent = n ? Object.entries(perms).map(([o, p]) => `${o}: ${Object.entries(p).map(([k, v]) => k + '=' + v).join(', ')}`).join(' · ') : 'No saved site permissions';
+  $('#permReset').onclick = async () => { await onedm.invoke('permissions:reset'); render(); };
+}
+onedm.on('settings-changed', () => {});
+render();
+</script></body></html>

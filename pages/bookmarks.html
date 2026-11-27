@@ -1,0 +1,51 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bookmarks</title>
+<link rel="stylesheet" href="onedm://shared/shared.css"></head><body>
+<header class="top"><h1>Bookmarks</h1><input id="q" type="search" placeholder="Search bookmarks" style="max-width:340px"><span class="sp"></span>
+<button id="addf">New folder</button><button id="add">Add bookmark</button><button id="imp">Import</button><button id="exp">Export</button></header>
+<main id="m"></main>
+<script src="onedm://shared/shared.js"></script>
+<script>
+let data = { items: [], folders: [] };
+const invoke = (c, ...a) => onedm.invoke('bookmarks:' + c, ...a);
+function row(b) {
+  return `<div class="item" data-id="${esc(b.id)}"><div class="fav">${letter(b.title)}</div><div class="t"><b><a href="${esc(b.url)}">${esc(b.title)}</a></b><small>${esc(b.url)}</small></div>
+  <div class="acts"><button data-a="edit">Edit</button><button class="danger" data-a="del">Delete</button></div></div>`;
+}
+function render() {
+  const q = $('#q').value.trim().toLowerCase();
+  const match = b => !q || (b.title + ' ' + b.url).toLowerCase().includes(q);
+  let html = '';
+  const root = data.items.filter(b => !b.folder && match(b));
+  if (root.length) html += `<div class="card"><h2>Bookmarks</h2>${root.map(row).join('')}</div>`;
+  for (const f of data.folders) {
+    const items = data.items.filter(b => b.folder === f.id && match(b));
+    if (q && !items.length) continue;
+    html += `<div class="card" data-folder="${esc(f.id)}"><h2 style="display:flex;align-items:center;gap:10px">📁 ${esc(f.title)}<span style="flex:1"></span><button data-a="fren" style="padding:2px 9px;text-transform:none">Rename</button><button class="danger" data-a="fdel" style="padding:2px 9px;text-transform:none">Delete</button></h2>${items.map(row).join('') || '<div class="empty" style="padding:14px">Empty folder</div>'}</div>`;
+  }
+  $('#m').innerHTML = html || '<div class="empty">No bookmarks yet. Press Ctrl+D on any page to add one.</div>';
+}
+async function load() { data = await invoke('get'); render(); }
+$('#q').oninput = render;
+$('#m').onclick = async e => {
+  const btn = e.target.closest('[data-a]'); if (!btn) return;
+  const card = btn.closest('[data-folder]'), item = btn.closest('[data-id]');
+  const a = btn.dataset.a;
+  if (a === 'del') await invoke('delete', item.dataset.id);
+  else if (a === 'edit') {
+    const b = data.items.find(x => x.id === item.dataset.id);
+    const r = await modal('Edit bookmark', [{ label: 'Title', value: b.title }, { label: 'URL', value: b.url }, { type: 'select', label: 'Folder', value: b.folder, options: [{ value: '', label: '(none)' }, ...data.folders.map(f => ({ value: f.id, label: f.title }))] }]);
+    if (r) await invoke('update', b.id, { title: r[0], url: r[1], folder: r[2] });
+  } else if (a === 'fren') {
+    const f = data.folders.find(x => x.id === card.dataset.folder); const r = await modal('Rename folder', [{ label: 'Name', value: f.title }]);
+    if (r && r[0].trim()) await invoke('folder-rename', f.id, r[0].trim());
+  } else if (a === 'fdel') { if (await confirmModal('Delete this folder and all bookmarks in it?', 'Delete')) await invoke('folder-delete', card.dataset.folder); }
+};
+$('#add').onclick = async () => {
+  const r = await modal('Add bookmark', [{ label: 'Title' }, { label: 'URL' }, { type: 'select', label: 'Folder', value: '', options: [{ value: '', label: '(none)' }, ...data.folders.map(f => ({ value: f.id, label: f.title }))] }]);
+  if (r && r[1].trim()) await invoke('add', { title: r[0].trim(), url: r[1].trim(), folder: r[2] });
+};
+$('#addf').onclick = async () => { const r = await modal('New folder', [{ label: 'Name' }], 'Create'); if (r && r[0].trim()) await invoke('folder-add', r[0].trim()); };
+$('#imp').onclick = async () => { const n = await invoke('import'); if (n >= 0) await modal('Import finished', [{ type: 'message', label: n + ' bookmark(s) imported.' }], 'OK'); };
+$('#exp').onclick = () => invoke('export');
+onedm.on('bookmarks-changed', load); load();
+</script></body></html>

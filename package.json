@@ -1,0 +1,75 @@
+{
+  "name": "onedm-browser",
+  "productName": "1DM Browser",
+  "version": "1.1.0",
+  "description": "Windows port of the 1DM+ browser and download manager, with live RTMP restream and a selective torrent downloader (aria2)",
+  "main": "src/main.js",
+  "author": "1DM Port",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable --x64 --publish never",
+    "test": "node test/aria2.test.js && node test/torrents.test.js && node test/restream.test.js && node test/ytdlp.test.js && node test/popups.test.js && node test/i18n.test.js",
+    "get-aria2": "node scripts/get-aria2.js",
+    "get-ytdlp": "node scripts/get-ytdlp.js"
+  },
+  "devDependencies": {
+    "electron": "github:castlabs/electron-releases#v45.2.1+wvcus",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.onedm.browser.win",
+    "productName": "1DM Browser",
+    "artifactName": "1DM-Browser-${version}-portable.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "ui/**/*",
+      "pages/**/*",
+      "assets/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asar": true,
+    "compression": "normal",
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "1DM-Browser-${version}-portable.exe"
+    },
+    "npmRebuild": false,
+    "asarUnpack": [
+      "**/*.node",
+      "node_modules/ffmpeg-static/**"
+    ],
+    "electronDownload": {
+      "mirror": "https://github.com/castlabs/electron-releases/releases/download/"
+    },
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin",
+        "filter": [
+          "aria2c.exe",
+          "yt-dlp.exe"
+        ]
+      }
+    ]
+  },
+  "optionalDependencies": {
+    "ffmpeg-static": "^5.2.0"
+  }
+}

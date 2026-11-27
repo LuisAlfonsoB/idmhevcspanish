@@ -1,0 +1,16 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Can’t open page</title>
+<link rel="stylesheet" href="onedm://shared/shared.css">
+<style>body{display:grid;place-items:center;min-height:100vh}.box{max-width:560px;padding:30px}.ic{font-size:54px}h1{font-size:24px;margin:10px 0}code{display:block;margin:14px 0;padding:8px 10px;background:var(--card);border:1px solid var(--border);border-radius:8px;word-break:break-all;color:var(--muted);font-size:12px}ul{color:var(--muted);padding-left:20px}</style></head><body>
+<div class="box"><div class="ic">⚠️</div><h1 id="h">This page can’t be reached</h1><div id="d"></div><code id="u"></code><ul id="tips"></ul><button class="primary" id="retry">Try again</button></div>
+<script src="onedm://shared/shared.js"></script>
+<script>
+const q = new URLSearchParams(location.search), code = parseInt(q.get('code'), 10), target = q.get('url') || '', desc = q.get('desc') || '';
+const K = { '-105': ['Server not found', ['Check the address for typos', 'Check your internet connection or DNS settings']], '-106': ['No internet connection', ['Check your network cables, modem and router', 'Reconnect to Wi-Fi']],
+  '-102': ['Connection refused', ['The site may be down or blocking the connection', 'Check your proxy and firewall settings']], '-118': ['Connection timed out', ['The server took too long to respond', 'Try again in a moment']],
+  '-109': ['Address unreachable', ['Check your network settings']], '-324': ['Empty response', ['The server closed the connection without sending data']], '-130': ['Proxy connection failed', ['Check your proxy settings in Settings → Advanced']] };
+let h = 'This page can’t be reached', tips = ['Check the address for typos', 'Check your connection and proxy settings'];
+if (K[code]) [h, tips] = K[code]; else if (code <= -200 && code > -300) { h = 'Your connection is not private'; tips = ['The site’s security certificate is not trusted', 'Your computer’s clock may be wrong', 'Someone may be intercepting your connection']; }
+else if (q.get('code') === 'CRASH') { h = 'This page crashed'; tips = ['Reload the page to try again']; }
+$('#h').textContent = h; $('#d').textContent = desc.replace(/^net::/, ''); $('#u').textContent = target; $('#tips').innerHTML = tips.map(t => `<li>${esc(t)}</li>`).join('');
+document.title = h; $('#retry').onclick = () => { if (target) location.href = target; else history.back(); };
+</script></body></html>

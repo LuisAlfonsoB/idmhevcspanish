@@ -1,0 +1,75 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Page grabber</title>
+<link rel="stylesheet" href="onedm://shared/shared.css">
+<style>
+.tabs{display:flex;gap:4px;margin-bottom:12px}.tabs button{border-radius:18px}.tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding:12px}
+.im{position:relative;border:2px solid transparent;border-radius:10px;overflow:hidden;background:var(--hover);cursor:pointer;aspect-ratio:1}.im.sel{border-color:var(--accent)}
+.im img{width:100%;height:100%;object-fit:cover;display:block}.im .d{position:absolute;left:0;right:0;bottom:0;padding:2px 6px;font-size:10px;background:rgba(0,0,0,.6);color:#fff}
+.im input{position:absolute;top:6px;left:6px;width:18px;height:18px}
+.item{cursor:pointer}.item input{width:18px;height:18px}
+.bottom{position:sticky;bottom:0;display:flex;gap:10px;align-items:center;padding:10px 24px;background:var(--card);border-top:1px solid var(--border)}
+.tag{font-size:11px;padding:1px 8px;border-radius:10px;background:var(--hover);color:var(--muted);margin-right:8px}
+.item{display:flex;align-items:center;gap:10px}.item .t{flex:1;min-width:0}.vq{margin-top:4px;font-size:12px;padding:2px 4px;max-width:100%}.cp{flex:0 0 auto;font-size:12px;padding:4px 10px}
+</style></head><body>
+<header class="top"><h1>Page grabber</h1><button id="rescan">Rescan</button><span id="src" style="color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1"></span><input id="q" type="search" placeholder="Filter" style="max-width:220px"></header>
+<main><div class="tabs" id="tabs"></div><div class="card" id="body"><div class="empty">Scanning page…</div></div></main>
+<div class="bottom"><label><input type="checkbox" id="all"> Select all</label><span id="cnt" style="color:var(--muted)"></span><span style="flex:1"></span><button id="cp" disabled>Copy selected URLs</button><button class="primary" id="dl" disabled>Download selected</button></div>
+<script src="onedm://shared/shared.js"></script>
+<script>
+const tabId = new URLSearchParams(location.search).get('tab');
+let data = null, tab = 'media', sel = new Set();
+const NAME = { media: 'Media', images: 'Images', links: 'Files & links' };
+function itemsOf(t) {
+  if (!data) return [];
+  if (t === 'media') { const seen = new Set(), out = []; for (const m of [...data.media, ...data.videos]) { if (!seen.has(m.url)) { seen.add(m.url); out.push(m); } } return out; }
+  return data[t] || [];
+}
+const q = () => $('#q').value.trim().toLowerCase();
+const shown = () => itemsOf(tab).filter(i => !q() || ((i.name || '') + i.url).toLowerCase().includes(q()));
+let pick = {};   // stream url -> index of the chosen quality (0 = best)
+const qlabel = x => (x.height ? x.height + 'p' : Math.round(x.bandwidth / 1000) + ' kbps') + (x.width ? ' · ' + x.width + '×' + x.height : '') + (x.bandwidth ? ' · ' + (x.bandwidth / 1e6).toFixed(1) + ' Mbps' : '');
+const chosen = i => (i.variants && i.variants.length) ? i.variants[pick[i.url] || 0] : null;
+const resolved = i => { const c = chosen(i); return c ? { ...i, url: c.url, videoId: c.id || '' } : i; };
+const selItems = () => ['media', 'images', 'links'].flatMap(itemsOf).filter(i => sel.has(i.url)).map(resolved);
+async function copyText(text, btn) {
+  await onedm.invoke('copy-text', text);
+  if (btn) { const old = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = old; }, 1200); }
+}
+function render() {
+  $('#tabs').innerHTML = Object.keys(NAME).map(k => `<button data-t="${k}" class="${k === tab ? 'on' : ''}">${NAME[k]} (${itemsOf(k).length})</button>`).join('');
+  const list = shown();
+  if (tab === 'images') $('#body').innerHTML = list.length ? `<div class="grid">${list.map(i => `<div class="im ${sel.has(i.url) ? 'sel' : ''}" data-u="${esc(i.url)}"><input type="checkbox" ${sel.has(i.url) ? 'checked' : ''} tabindex="-1"><img loading="lazy" referrerpolicy="no-referrer" src="${esc(i.url)}"><div class="d">${i.w}×${i.h}</div></div>`).join('')}</div>` : '<div class="empty">Nothing found.</div>';
+  else $('#body').innerHTML = list.length ? list.map(i => {
+    let n = i.name; if (!n) { try { n = decodeURIComponent(new URL(i.url).pathname.split('/').pop()); } catch (_) {} }
+    const kind = { mse: 'Streaming (blob)', dash: 'DASH stream', hls: 'HLS stream', dash: 'DASH stream', video: 'Video', audio: 'Audio', magnet: 'Magnet', torrent: 'Torrent', file: 'File' }[i.kind] || i.kind;
+    const v = i.variants && i.variants.length ? i.variants : null, cur = pick[i.url] || 0, cu = v ? v[cur].url : i.url;
+    const quality = v && v.length > 1 ? `<select class="vq" data-vu="${esc(i.url)}">${v.map((x, k) => `<option value="${k}"${k === cur ? ' selected' : ''}>${esc(qlabel(x))}</option>`).join('')}</select>` : '';
+    return `<div class="item" data-u="${esc(i.url)}"><input type="checkbox" ${sel.has(i.url) ? 'checked' : ''} tabindex="-1"><div class="t"><b>${esc(n || i.url)}</b><small><span class="tag">${kind}</span>${i.size ? fmtBytes(i.size) + ' · ' : ''}${esc(cu.slice(0, 120))}</small>${quality}</div><button class="cp" data-copy="${esc(cu)}">Copy URL</button></div>`;
+  }).join('') : '<div class="empty">Nothing found. For videos, press play first, then reopen the grabber.</div>';
+  $('#cnt').textContent = sel.size ? sel.size + ' selected' : '';
+  $('#dl').disabled = !sel.size; $('#cp').disabled = !sel.size; $('#all').checked = list.length > 0 && list.every(i => sel.has(i.url));
+}
+$('#tabs').onclick = e => { const b = e.target.closest('[data-t]'); if (b) { tab = b.dataset.t; render(); } };
+$('#body').onclick = e => {
+  const c = e.target.closest('[data-copy]'); if (c) return copyText(c.dataset.copy, c);
+  if (e.target.closest('select')) return;
+  const el = e.target.closest('[data-u]'); if (!el) return; const u = el.dataset.u; sel.has(u) ? sel.delete(u) : sel.add(u); render();
+};
+$('#body').onchange = e => { const s = e.target.closest('select.vq'); if (!s) return; const u = s.dataset.vu; pick[u] = +s.value; sel.add(u); render(); };
+$('#cp').onclick = () => copyText(selItems().map(i => i.url).join('\n'), $('#cp'));
+$('#all').onchange = e => { for (const i of shown()) e.target.checked ? sel.add(i.url) : sel.delete(i.url); render(); };
+$('#q').oninput = render;
+$('#dl').onclick = async () => {
+  const items = selItems();
+  $('#dl').disabled = true; const n = await onedm.invoke('grabber:download', tabId, items);
+  sel.clear(); render(); $('#cnt').textContent = n + ' download(s) started';
+};
+async function scan() {
+  data = await onedm.invoke('grabber:scan', tabId);
+  if (!data) { $('#body').innerHTML = '<div class="empty">The source tab is no longer open.</div>'; return; }
+  $('#src').textContent = data.title + ' — ' + data.url; render();
+  if (!itemsOf('media').length) { for (const t of ['images', 'links']) if (itemsOf(t).length) { tab = t; break; } render(); }
+  if (data.blob && !data.media.length) $('#body').insertAdjacentHTML('afterbegin', '<div class="empty" style="padding:14px">This page plays video through a <b>blob:</b> player. Start playback in the page tab, then press <b>Rescan</b> — the stream behind it (HLS/DASH) is detected as it loads.</div>');
+}
+$('#rescan').onclick = scan; scan();
+</script></body></html>

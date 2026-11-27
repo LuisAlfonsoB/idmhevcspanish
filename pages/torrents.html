@@ -1,0 +1,140 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Torrents</title>
+<link rel="stylesheet" href="onedm://shared/shared.css">
+<style>
+.add{display:flex;gap:8px;margin-bottom:14px}
+.t{padding:12px 16px;border-bottom:1px solid var(--border)} .t:last-child{border-bottom:0}
+.t h3{margin:0;font-size:14px;font-weight:600;display:flex;gap:8px;align-items:center;word-break:break-all}
+.st{font-size:11px;padding:1px 8px;border-radius:10px;background:var(--hover);color:var(--muted);font-weight:500;white-space:nowrap}
+.st.seeding,.st.completed{color:#16a34a}.st.error{color:var(--danger)}.st.downloading{color:var(--accent)}
+.meta{color:var(--muted);font-size:12px;margin-top:4px;display:flex;flex-wrap:wrap;gap:4px 14px}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.btns button{padding:3px 10px;font-size:12px}
+.files{margin-top:8px;border:1px solid var(--border);border-radius:8px;max-height:260px;overflow:auto}
+.f{display:flex;gap:8px;align-items:center;padding:4px 10px;font-size:12px;border-bottom:1px solid var(--border)}.f:last-child{border-bottom:0}.f span.n{flex:1;word-break:break-all}.f span.p{color:var(--muted);white-space:nowrap}
+.f a{color:var(--accent);cursor:pointer;white-space:nowrap}
+.note{color:var(--muted);font-size:12px;margin:0 0 12px}
+/* file picker */
+.picker{width:min(640px,94vw)!important;max-height:90vh;display:flex;flex-direction:column}
+.picker .files{flex:1;max-height:none;min-height:120px}
+.picker .tools{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 0;align-items:center}.picker .tools button{padding:3px 10px;font-size:12px}
+.picker .sum{margin-left:auto;font-size:12px;color:var(--muted)}
+.picker .opt{display:flex;gap:8px;align-items:center;margin:10px 0 0;font-size:13px}
+.picker .dest{display:flex;gap:8px;margin-top:4px}
+.picker .err{color:var(--danger);font-size:12px;margin-top:8px}
+.f.dim .n{color:var(--muted)}
+</style></head><body>
+<header class="top"><h1>Torrents</h1><span class="sp"></span><a href="#" id="rs" style="margin-right:6px">Live restream…</a><button id="clr">Clear finished</button></header>
+<main>
+  <div class="add"><input id="mag" type="text" placeholder="Paste a magnet link, torrent URL, or info-hash"><button class="primary" id="addb">Choose files…</button><button id="file">Open .torrent…</button></div>
+  <p class="note" id="msg">Magnet links and .torrent downloads from any page open here automatically, so you can choose which files to download. Windows may ask to allow network access the first time.</p>
+  <div class="card" id="list"></div>
+</main>
+<script src="onedm://shared/shared.js"></script>
+<script>
+let list = [], open = new Set();
+const fmtTime = s => !s || !isFinite(s) ? '' : s > 86400 ? '> 1 day' : new Date(s * 1000).toISOString().substr(11, 8).replace(/^00:/, '');
+const label = { metadata: 'Fetching metadata', downloading: 'Downloading', seeding: 'Seeding', paused: 'Paused', completed: 'Completed', error: 'Error' };
+const msg = (t, bad) => { const m = $('#msg'); m.textContent = t; m.style.color = bad ? 'var(--danger)' : ''; };
+const rsLink = (h, i) => 'onedm://restream?th=' + h + '&i=' + i;
+
+function render() {
+  if (document.activeElement && document.activeElement.closest('.files')) return;   // don't rebuild while ticking a checkbox
+  $('#list').innerHTML = list.length ? list.map(t => {
+    const pct = Math.round((t.progress || 0) * 100);
+    const live = t.state === 'downloading' || t.state === 'seeding' || t.state === 'metadata';
+    const btns = [
+      t.state === 'paused' ? '<button data-a="resume">Resume</button>' : live ? '<button data-a="pause">Pause</button>' : '',
+      t.state === 'error' ? '<button data-a="retry">Retry</button>' : '',
+      t.state === 'completed' ? '<button data-a="seed">Seed</button>' : '',
+      t.state === 'seeding' ? '<button data-a="stop-seeding">Stop seeding</button>' : '',
+      '<button data-a="open">Open</button><button data-a="show">Show in folder</button>',
+      t.files && t.files.length > 1 ? `<button data-a="files">${open.has(t.infoHash) ? 'Hide' : 'Choose'} files (${t.files.length})</button>` : '',
+      t.infoHash ? '<button data-a="restream">Restream…</button>' : '',
+      '<button data-a="remove">Remove</button><button class="danger" data-a="delete">Delete + files</button>'
+    ].join('');
+    const files = open.has(t.infoHash) && t.files ? `<div class="files">${t.files.map(f => `<label class="f"><input type="checkbox" data-f="${f.i}" ${f.selected ? 'checked' : ''}><span class="n">${esc(f.name)}</span><span class="p">${fmtBytes(f.length)} · ${Math.round(f.progress * 100)}%</span>${f.video ? `<a data-rs="${f.i}" title="Play this video live into an RTMP server">Restream</a>` : ''}</label>`).join('')}</div>` : '';
+    return `<div class="t" data-h="${esc(t.infoHash)}"><h3>${esc(t.name)} <span class="st ${t.state}">${label[t.state] || t.state}</span></h3>
+      ${t.state !== 'metadata' ? `<div class="bar"><div style="width:${pct}%"></div></div>` : ''}
+      <div class="meta"><span>${fmtBytes(t.downloaded)} / ${fmtBytes(t.length)} (${pct}%)</span>${live ? `<span>↓ ${fmtBytes(t.down)}/s</span><span>↑ ${fmtBytes(t.up)}/s</span><span>${t.peers} peers</span>` : ''}${t.eta && t.state === 'downloading' ? `<span>ETA ${esc(fmtTime(t.eta))}</span>` : ''}<span>Uploaded ${fmtBytes(t.uploaded)}</span>${t.seed && t.state === 'downloading' ? '<span>Will keep seeding</span>' : ''}${t.error ? `<span style="color:var(--danger)">${esc(t.error)}</span>` : ''}</div>
+      <div class="btns">${btns}</div>${files}</div>`;
+  }).join('') : '<div class="empty">No torrents yet.</div>';
+}
+$('#list').onclick = e => {
+  const rs = e.target.closest('[data-rs]');
+  if (rs) { e.preventDefault(); return onedm.invoke('open', rsLink(rs.closest('[data-h]').dataset.h, rs.dataset.rs), true); }
+  const b = e.target.closest('[data-a]'); if (!b) return; const h = b.closest('[data-h]').dataset.h, a = b.dataset.a;
+  if (a === 'files') { open.has(h) ? open.delete(h) : open.add(h); render(); return; }
+  if (a === 'restream') return onedm.invoke('open', 'onedm://restream?th=' + h, true);
+  if (a === 'delete' || a === 'remove') { confirmModal(a === 'delete' ? 'Remove this torrent and move its files to the Recycle Bin?' : 'Remove this torrent from the list? Downloaded files are kept.', 'Remove').then(ok => ok && onedm.invoke('torrents:action', h, a)); return; }
+  onedm.invoke('torrents:action', h, a);
+};
+$('#list').onchange = e => {
+  const c = e.target.closest('[data-f]'); if (!c) return; const box = c.closest('[data-h]');
+  const sel = [...box.querySelectorAll('[data-f]')].filter(x => x.checked).map(x => +x.dataset.f);
+  onedm.invoke('torrents:action', box.dataset.h, 'files', sel);
+};
+
+// ---------- file picker ----------
+async function showPicker(meta, defaults) {
+  const set = await onedm.invoke('settings:get');
+  const S = set.settings, def = set.defaultDownloadDir;
+  let dir = S.downloadDir || '';
+  const sel = new Set(meta.files.map(f => f.index));
+  const bg = document.createElement('div'); bg.className = 'modal-bg';
+  const sorted = meta.files.slice().sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
+  bg.innerHTML = `<div class="modal picker"><h3>${esc(meta.name)}</h3>
+    <div style="color:var(--muted);font-size:12px">${meta.files.length} file${meta.files.length === 1 ? '' : 's'} · ${fmtBytes(meta.length)}${meta.known ? ' · <b>already in your list</b>' : ''}</div>
+    <div class="tools"><button data-t="all">All</button><button data-t="none">None</button><button data-t="video">Videos only</button><span class="sum" id="sum"></span></div>
+    <div class="files">${sorted.map(f => `<label class="f ${f.video ? '' : 'dim'}"><input type="checkbox" data-i="${f.index}" checked><span class="n">${esc(f.path)}</span><span class="p">${fmtBytes(f.length)}</span></label>`).join('')}</div>
+    <label style="display:block;margin:10px 0 0;font-size:12px;color:var(--muted)">Save in</label>
+    <div class="dest"><input type="text" id="pdir" readonly><button id="pbrowse">Browse…</button></div>
+    <label class="opt"><input type="checkbox" id="pseed" ${S.torrentSeed ? 'checked' : ''}> Keep seeding after the download finishes</label>
+    <div class="err" id="perr"></div>
+    <div class="btns" style="justify-content:flex-end;margin-top:14px"><button data-c>Cancel</button><button class="primary" id="pgo">Download</button></div></div>`;
+  document.body.appendChild(bg);
+  const $$ = s => bg.querySelector(s);
+  const shown = () => { $$('#pdir').value = dir || def; };
+  const sum = () => {
+    const chosen = meta.files.filter(f => sel.has(f.index)), n = chosen.reduce((a, f) => a + f.length, 0);
+    $$('#sum').textContent = chosen.length + ' selected · ' + fmtBytes(n); $$('#pgo').disabled = !chosen.length;
+    bg.querySelectorAll('[data-i]').forEach(c => c.checked = sel.has(+c.dataset.i));
+  };
+  shown(); sum();
+  return new Promise(resolve => {
+    const done = v => { bg.remove(); resolve(v); };
+    bg.onclick = e => {
+      if (e.target === bg || e.target.closest('[data-c]')) return done(null);
+      const t = e.target.closest('[data-t]'); if (!t) return;
+      sel.clear();
+      meta.files.forEach(f => { if (t.dataset.t === 'all' || (t.dataset.t === 'video' && f.video)) sel.add(f.index); });
+      sum();
+    };
+    bg.onchange = e => { const c = e.target.closest('[data-i]'); if (!c) return; c.checked ? sel.add(+c.dataset.i) : sel.delete(+c.dataset.i); sum(); };
+    bg.onkeydown = e => { if (e.key === 'Escape') done(null); };
+    $$('#pbrowse').onclick = async () => { const d = await onedm.invoke('settings:pick-dir'); if (d) { dir = d; shown(); } };
+    $$('#pgo').onclick = async () => {
+      $$('#pgo').disabled = true;
+      const r = await onedm.invoke('torrents:add-picked', meta.key, { files: [...sel], seed: $$('#pseed').checked, dir: dir || '' });
+      if (r && r.ok) done(true); else { $$('#perr').textContent = (r && r.error) || 'Could not add this torrent.'; $$('#pgo').disabled = false; }
+    };
+  });
+}
+async function pick(call, busyText) {
+  msg(busyText || 'Reading the torrent…');
+  const r = await call;
+  if (!r || r.cancelled) return msg(DEFAULT_NOTE);
+  if (!r.ok) return msg('Could not load: ' + r.error, true);
+  msg(DEFAULT_NOTE);
+  if (await showPicker(r.meta)) { $('#mag').value = ''; }
+}
+const DEFAULT_NOTE = $('#msg').textContent;
+function add() { const v = $('#mag').value.trim(); if (v) pick(onedm.invoke('torrents:peek', v), 'Fetching the file list from peers (a magnet can take up to 2 minutes)…'); }
+$('#addb').onclick = add; $('#mag').onkeydown = e => { if (e.key === 'Enter') add(); };
+$('#file').onclick = () => pick(onedm.invoke('torrents:peek-file'));
+$('#rs').onclick = e => { e.preventDefault(); onedm.invoke('open', 'onedm://restream', true); };
+$('#clr').onclick = () => onedm.invoke('torrents:action', '_', 'clear-finished').then(() => onedm.invoke('torrents:get').then(l => { list = l; render(); }));
+onedm.on('torrents-update', l => { list = l; render(); });
+onedm.invoke('torrents:get').then(l => { list = l; render(); });
+// opened from a magnet link / .torrent that a page or the address bar handed over
+const token = new URLSearchParams(location.search).get('pick');
+if (token) pick(onedm.invoke('torrents:peek', '', token), 'Fetching the file list from peers (a magnet can take up to 2 minutes)…');
+</script></body></html>
